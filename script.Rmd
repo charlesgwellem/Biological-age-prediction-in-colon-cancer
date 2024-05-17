@@ -1,52 +1,42 @@
 ---
-title: "Investment Report"
-output: 
+title: "Biological age prediction"
+author: "Charles Anchang"
+date: "Last compiled on `r format(Sys.time(), '%d %B, %Y')`"
+output:
   html_document:
-    toc: true
+    theme: cosmo
+    highlight: monochrome
+    toc: yes
+    toc_float: no
+    toc_depth: 6
     code_folding: hide
-    toc_float:
-      collapsed: false
-      smooth_scroll: false
-    toc_depth: 3
-date: "`r format(Sys.time(), '%d %B %Y')`"
-editor_options: 
+  word_document:
+    toc: yes
+    toc_depth: '6'
+  pdf_document:
+    toc: yes
+    toc_depth: '6'
+editor_options:
   chunk_output_type: console
 ---
 
+```{css, echo=FALSE}
 <style>
-#TOC {
-  color: #708090;
-  font-family: Calibri;
-  font-size: 16px; 
-  border-color: #708090;
+body, divi, h2, h3, h4 {
+    font-family: "Bookman", serif;
 }
-h1.title {
-  color: #F08080;
-  background-color: #F5F5F5;
-  opacity: 0.6;
-  font-family: Calibri;
-  font-size: 20px;
-}
-h4.author {
-  color: #708090;
-  font-family: Calibri;
-  background-color: #F5F5F5;
-}
-h4.date {
-  color: #708090;  
-  font-family: Calibri;
-  background-color: #F5F5F5;
-}
+
 body {
-  color: #708090;
-  font-family: Calibri;
-  background-color: #F5F5F5;
+    color: #333333;
+}
+a, a:hover {
+    color: red;
 }
 pre {
-  color: #708090;
-  background-color: #F8F8FF;
+    font-size: 10px;
 }
 </style>
+```
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(fig.align = 'center', echo = TRUE)
@@ -54,9 +44,9 @@ knitr::opts_chunk$set(fig.align = 'center', echo = TRUE)
 
 ## Introduction
 
-The goal of this project is to predict de novo, the biological age of the normal and healthy colon samples in the DNA methylation dataset from the [genomicClass](https://github.com/genomicsclass/coloncancermeth/blob/master/data/coloncancermeth.rda) github page. The CpGs that determine the biological clock will be the predictors. A CpG is a C, followed by a G but from the  $5^1$ end to the  $3^1$ end of a DNA strand.
+The goal of this project is to predict the biological age of the normal and healthy colon samples in the DNA methylation dataset from the [genomicClass](https://github.com/genomicsclass/coloncancermeth/blob/master/data/coloncancermeth.rda) github page. The CpGs that determine the biological clock will be determined de novo using PCA and used as the predictors. A CpG is a C, followed by a G but from the  $5^1$ end to the  $3^1$ end of a DNA strand.
 
-Epigenetic mechanisms regulate gene expression. Certain technologies enable us measure some epigentic endpoints. One example is DNA methylation. DNA methylation is a chemical process that occurs around genes and which is capable of silencing gene expression. In this project, I will analyse DNA methylation data for the whole genome and relate it to phenotypic variation.
+Epigenetic mechanisms regulate gene expression. Certain technologies enable us measure some epigenetic endpoints. One example is DNA methylation. DNA methylation is a chemical process that occurs around genes and which is capable of silencing gene expression. In this project, I will analyse DNA methylation data for the whole genome and relate it to phenotypic variation.
 
 It has been studied that when part of a genome is methylated, the gene close to it is not expressed. It is inherited at mitosis. Methylation often occurs at CpG islands.
 
@@ -64,17 +54,165 @@ When one DNA strand is methylated, so is the other. If we also have a CpG on one
 
 ## Load the libraries
 
-```{r}
+```{r include=FALSE}
 ## load packages
 library(ggplot2)
 library(IRanges)
 library(S4Vectors)
+library(tidyverse)
 ```
 
 ## Mile stones
+
 ### Loading the data
 
 ```{r}
+# load the data
+coloncancermeth <- load("coloncancermeth.rda")
+coloncancermeth
+dim(meth)
+```
 
+**Overview of the metadata**
+
+```{r}
+colnames(pd)
+```
+
+### Perform PCA
+
+The goal of performing PCA is to identify the CPGs that are strongly predictive of the age. The approach consists of identifying the principal components whose loading scores have a significant relationship with the outcome of interest which is the age. The top 24 CPGs with the highest loading scores in the PC with significant relationship with the age will be selected to serve as predictors in a linear model with age as outcome. The model will be used predict the age. This prediction will constitute the biological age.
+
+```{r fig.align='center'}
+pca <- prcomp(t(meth), scale = TRUE)
+
+## make a scree plot
+pca.var <- pca$sdev^2
+pca.var.per <- round(pca.var/sum(pca.var)*100, 1)
+pca.var.per
+ 
+barplot(pca.var.per, 
+        main="Scree Plot", 
+        xlab="Principal Component", ylab="Percent Variation")
+```
+
+According to the bar plot above, PC1 accounts for nearly 27% of the variation in the dataset. The next step is to identify which principal components have a significant correlation with the age.
+
+```{r fig.align='center'}
+pca.data <- data.frame(Sample=pd$Status,
+  X=pca$x[,1],
+  Y=pca$x[,2])
+
+ggplot(data=pca.data, aes(x=X, y=Y, 
+						  label=Sample, color=Sample)) +
+  geom_text() +
+  xlab(paste("PC1 - ", pca.var.per[1], "%", sep="")) +
+  ylab(paste("PC2 - ", pca.var.per[2], "%", sep="")) +
+  theme_bw() +
+  ggtitle("PCA of colon tissues")+
+   theme(plot.title = element_text(hjust = 0.5),
+         aspect.ratio = 1)
+```
+
+### Identify which principal components have a significant correlation with the age
+
+**Assess the significance of the correlations of PCs with age**
+
+```{r}
+pcs <- as.data.frame(pca$x)
+
+age <- pd$patient.age_at_initial_pathologic_diagnosis
+
+p_values <- sapply(pcs, function(x){
+	 cort_test_p <- cor.test(x, age)$p.value
+	 cort_test_p
+})
+p_values[p_values <= 0.1]
+```
+
+Results of pca show that PC2 has a significant correlation with the age, meanwhile, PC10, and PC20 are the pcs with (near-) significant correlation with the age. The next step will be to select the cpgs top 24 cpgs that have strongest loading scores on the 2nd PC. I select 24 since there are only 27 observations in the data and selecting more than 24 features will overwhelm the model.
+
+**Get the top 24 CpGs that have the highest loading scores for PC2**
+
+```{r}
+## get the name of the top 24 measurements (cpgs) that contribute most to pc1.
+loading_scores <- pca$rotation[,2]
+cpgs_scores <- abs(loading_scores) ## get the magnitudes
+cpgs_score_ranked <- sort(cpgs_scores, decreasing=TRUE)
+top_cpgs_pc2<- names(cpgs_score_ranked[1:24])
+```
+
+Now that I have cpgs that have top loading scores or influence on the PCs that have significant correlation with the age at time of diagnosis, I can proceed to make a simple linear regression where I predict this chronological age, using the epigenetic signatures that correlate with the age.
+
+```{r}
+age_related_cpgs <- top_cpgs_pc2
+length(age_related_cpgs)
+t_meth <- as.data.frame(t(meth))
+dim(t_meth)
+t_meth$age <- pd$patient.age_at_initial_pathologic_diagnosis
+```
+
+### Linear modelling
+
+```{r}
+lmod <- lm(age~.,data = t_meth[, c(age_related_cpgs,"age")])
+summary(lmod)
+```
+
+**Model diagnostics**
+
+```{r}
+plot(lmod)
+shapiro.test(resid(lmod))
+```
+
+The r-squared value is 0.93 which means the linear model accounts for 0.93% of the variation in the dataset. This is a high and sufficient number.
+
+The plot of the fitted points vs residuals does not show a pattern, showing that the model fits well and exhibits no heteroscedasticity. The Shapiro test on the residuals show that the p value is greater than 0.05, meaning that we do not have enough evidence to reject the null hypothesis of the normal distribution of residuals. 
+
+The high r-squared value, absence of heteoroscedasticity and normal distribution of residuals are important parameters that point to the goodness of fit.
+
+**Prediction of the biological age**
+
+```{r}
+t_meth$predicted_age <- predict(lmod, t_meth)
+cor(t_meth$predicted_age, t_meth$age)
+```
+
+The results above show a correlation coefficient of almost 1, as expected in literature.
+
+```{r}
+pd$Status
+```
+
+```{r}
+res <- data.frame(Status = pd$Status,
+				 Age = t_meth$age,
+				 Predicted_age = t_meth$predicted_age)
+res$Sq_error <-  (res$Age - res$Predicted_age)^2
+res <- res[order(res$Sq_error, decreasing = T), ]
+res %>%knitr:: kable("pipe")
+```
+
+### Hypothesis testing To see if biological age differs significantly in the cancer vs normal groups.
+
+```{r}
+t_meth$Status <- pd$Status
+table(t_meth$Status)
+healthy_age <- t_meth[t_meth$Status == "normal", ]$predicted_age
+cancer_age <- t_meth[t_meth$Status == "cancer", ]$predicted_age
+t.test(healthy_age, cancer_age)
+```
+
+The p value after the t test, not assuming equal variance in the two groups is greater than 0.5, which implies we do not have strong evidence to reject the null hypothesis. This implies that the biological age does not differ significantly in the normal vs cancer tissues.
+
+### Conclusion
+
+PCA can be used as feature selection to select CPG ptedictors of the biological age, when we have very few observations like in this case, 26. Otherwise, lasso regression and pther robust feature selectionmedthods can be used.
+
+## Session info
+
+```{r}
+sessionInfo()
 ```
 
