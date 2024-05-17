@@ -55,11 +55,11 @@ When one DNA strand is methylated, so is the other. If we also have a CpG on one
 ## Load the libraries
 
 ```{r include=FALSE}
-## load packages
 library(ggplot2)
 library(IRanges)
 library(S4Vectors)
 library(tidyverse)
+library(dplyr)
 ```
 
 ## Mile stones
