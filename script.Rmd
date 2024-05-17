@@ -96,7 +96,7 @@ barplot(pca.var.per,
         xlab="Principal Component", ylab="Percent Variation")
 ```
 
-According to the bar plot above, PC1 accounts for nearly 27% of the variation in the dataset. The next step is to identify which principal components have a significant correlation with the age.
+According to the scree plot above, PC1 accounts for nearly 27% of the variation in the dataset. The next step is to identify which principal components have a significant correlation with the age.
 
 ```{r fig.align='center'}
 pca.data <- data.frame(Sample=pd$Status,
